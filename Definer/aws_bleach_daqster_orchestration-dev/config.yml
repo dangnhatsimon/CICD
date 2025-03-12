@@ -1,0 +1,355 @@
+version: 2.1
+executors:
+  deploy_container:
+    docker:
+      - image: cimg/python:3.11.1
+    working_directory: ~/work
+
+  node_container:
+    docker:
+      - image: cimg/node:18.14.2
+
+orbs:
+  aws-cli: circleci/aws-cli@3.1.4
+  slack: circleci/slack@3.4.2
+
+commands:
+  lint_and_unit_test_command:
+    steps:
+      - run:
+          name: lint and unit test
+          command: |
+            set -x
+            echo "any lint and unit test command"
+
+  deploy_to_dagster_dev:
+    steps:
+      - run:
+          name: deploy
+          command: |
+            set -x
+            aws --version
+            echo "any deploy command"
+
+            touch .env
+            echo "ENV=\"dev\"" >> .env
+            echo "DAGSTER_HOME=\"${DAGSTER_HOME}\"" >> .env
+            echo "DAGSTER_PG_HOST=\"${DEV_DAGSTER_PG_HOST}\"" >> .env
+            echo "DAGSTER_PG_PASSWORD=\"${DEV_DAGSTER_PG_PASSWORD}\"" >> .env
+
+            docker-compose -f docker-compose-webserver.yml build
+            # docker tag ${WEBSERVER_DOCKER_IMAGE_NAME}:latest asia.gcr.io/${DEV_GCP_PROJECT_ID}/${DEV_WEBSERVER_DOCKER_IMAGE_NAME}:${CIRCLE_SHA1}
+
+            aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${DEV_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+            docker tag aws_dagster:latest ${DEV_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_DAGSTER_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            docker push ${DEV_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_DAGSTER_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            ECR_ARN=${DEV_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_DAGSTER_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+
+            sed -i -e "s@container_name_here@${DEV_DAGSTER_CONTAINER_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@image_url_here@${ECR_ARN}@g" ./aws/task-definition.json
+            sed -i -e "s@default_region_here@${AWS_DEFAULT_REGION}@g" ./aws/task-definition.json
+            sed -i -e "s@taskdf_name_here@${DEV_ECS_DAGSTER_TASK_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@role_arn_here@arn:aws:iam::${DEV_AWS_ACCOUNT_NUMBER}:role/${DEV_ECS_DAGSTER_TASK_ROLE}@g" ./aws/task-definition.json
+            sed -i -e "s@log_prefix_here@${DEV_ECS_DAGSTER_SERVICE_NAME}_${CIRCLE_BUILD_NUM}@g" ./aws/task-definition.json
+
+            sed -i -e "s@aws_log_group_here@${DEV_DAGSTER_LOG_GROUP_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@env_var_here@dev@g" ./aws/task-definition.json
+
+            aws ecs register-task-definition --cli-input-json file://aws/task-definition.json
+
+            aws ecs update-service --cluster ${DEV_ECS_DAGSTER_CLUSTER_NAME} --service ${DEV_ECS_DAGSTER_SERVICE_NAME} --task-definition ${DEV_ECS_DAGSTER_TASK_NAME}
+
+  deploy_to_dagster_daemon_dev:
+    steps:
+      - run:
+          name: deploy
+          command: |
+            set -x
+            aws --version
+            echo "any deploy command"
+
+            touch .env
+            echo "ENV=\"dev\"" >> .env
+            echo "DAGSTER_HOME=\"${DAGSTER_HOME}\"" >> .env
+            echo "DAGSTER_PG_HOST=\"${DEV_DAGSTER_PG_HOST}\"" >> .env
+            echo "DAGSTER_PG_PASSWORD=\"${DEV_DAGSTER_PG_PASSWORD}\"" >> .env
+
+            docker-compose -f docker-compose-daemon.yml build
+            # docker tag aws_dagster_daemon:latest asia.gcr.io/${DEV_GCP_PROJECT_ID}/${DEV_DAEMON_DOCKER_IMAGE_NAME}:${CIRCLE_SHA1}
+
+            aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${DEV_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+            docker tag aws_dagster_daemon:latest ${DEV_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_DAEMON_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            docker push ${DEV_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_DAEMON_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            ECR_ARN=${DEV_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_DAEMON_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+
+            sed -i -e "s@container_name_here@${DEV_DAEMON_CONTAINER_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@image_url_here@${ECR_ARN}@g" ./aws/task-definition.json
+            sed -i -e "s@default_region_here@${AWS_DEFAULT_REGION}@g" ./aws/task-definition.json
+            sed -i -e "s@taskdf_name_here@${DEV_ECS_DAEMON_TASK_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@role_arn_here@arn:aws:iam::${DEV_AWS_ACCOUNT_NUMBER}:role/${DEV_ECS_DAEMON_TASK_ROLE}@g" ./aws/task-definition.json
+            sed -i -e "s@log_prefix_here@${DEV_ECS_DAEMON_SERVICE_NAME}_${CIRCLE_BUILD_NUM}@g" ./aws/task-definition.json
+
+            sed -i -e "s@aws_log_group_here@${DEV_DAEMON_LOG_GROUP_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@env_var_here@dev@g" ./aws/task-definition.json
+
+            aws ecs register-task-definition --cli-input-json file://aws/task-definition.json
+
+            aws ecs update-service --cluster ${DEV_ECS_DAEMON_CLUSTER_NAME} --service ${DEV_ECS_DAEMON_SERVICE_NAME} --task-definition ${DEV_ECS_DAEMON_TASK_NAME}
+
+  deploy_to_dagster_prod:
+    steps:
+      - run:
+          name: deploy
+          command: |
+            set -x
+            aws --version
+            echo "any deploy command"
+
+            touch .env
+            echo "ENV=\"prod\"" >> .env
+            echo "DAGSTER_HOME=\"${DAGSTER_HOME}\"" >> .env
+            echo "DAGSTER_PG_HOST=\"${PROD_DAGSTER_PG_HOST}\"" >> .env
+            echo "DAGSTER_PG_PASSWORD=\"${PROD_DAGSTER_PG_PASSWORD}\"" >> .env
+
+            docker-compose -f docker-compose-webserver.yml build
+            # docker tag ${WEBSERVER_DOCKER_IMAGE_NAME}:latest asia.gcr.io/${PROD_GCP_PROJECT_ID}/${PROD_WEBSERVER_DOCKER_IMAGE_NAME}:${CIRCLE_SHA1}
+
+            aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${PROD_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+            docker tag aws_dagster:latest ${PROD_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PROD_DAGSTER_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            docker push ${PROD_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PROD_DAGSTER_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            ECR_ARN=${PROD_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PROD_DAGSTER_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+
+            sed -i -e "s@container_name_here@${PROD_DAGSTER_CONTAINER_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@image_url_here@${ECR_ARN}@g" ./aws/task-definition.json
+            sed -i -e "s@default_region_here@${AWS_DEFAULT_REGION}@g" ./aws/task-definition.json
+            sed -i -e "s@taskdf_name_here@${PROD_ECS_DAGSTER_TASK_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@role_arn_here@arn:aws:iam::${PROD_AWS_ACCOUNT_NUMBER}:role/${PROD_ECS_DAGSTER_TASK_ROLE}@g" ./aws/task-definition.json
+            sed -i -e "s@log_prefix_here@${PROD_ECS_DAGSTER_SERVICE_NAME}_${CIRCLE_BUILD_NUM}@g" ./aws/task-definition.json
+
+            sed -i -e "s@aws_log_group_here@${PROD_DAGSTER_LOG_GROUP_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@env_var_here@dev@g" ./aws/task-definition.json
+
+            aws ecs register-task-definition --cli-input-json file://aws/task-definition.json
+
+            aws ecs update-service --cluster ${PROD_ECS_DAGSTER_CLUSTER_NAME} --service ${PROD_ECS_DAGSTER_SERVICE_NAME} --task-definition ${PROD_ECS_DAGSTER_TASK_NAME}
+
+  deploy_to_dagster_daemon_prod:
+    steps:
+      - run:
+          name: deploy
+          command: |
+            set -x
+            aws --version
+            echo "any deploy command"
+
+            touch .env
+            echo "ENV=\"prod\"" >> .env
+            echo "DAGSTER_HOME=\"${DAGSTER_HOME}\"" >> .env
+            echo "DAGSTER_PG_HOST=\"${PROD_DAGSTER_PG_HOST}\"" >> .env
+            echo "DAGSTER_PG_PASSWORD=\"${PROD_DAGSTER_PG_PASSWORD}\"" >> .env
+
+            docker-compose -f docker-compose-daemon.yml build
+            # docker tag aws_dagster_daemon:latest asia.gcr.io/${PROD_GCP_PROJECT_ID}/${PROD_DAEMON_DOCKER_IMAGE_NAME}:${CIRCLE_SHA1}
+
+            aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${PROD_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+            docker tag aws_dagster_daemon:latest ${PROD_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PROD_DAEMON_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            docker push ${PROD_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PROD_DAEMON_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            ECR_ARN=${PROD_AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${PROD_DAEMON_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+
+            sed -i -e "s@container_name_here@${PROD_DAEMON_CONTAINER_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@image_url_here@${ECR_ARN}@g" ./aws/task-definition.json
+            sed -i -e "s@default_region_here@${AWS_DEFAULT_REGION}@g" ./aws/task-definition.json
+            sed -i -e "s@taskdf_name_here@${PROD_ECS_DAEMON_TASK_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@role_arn_here@arn:aws:iam::${PROD_AWS_ACCOUNT_NUMBER}:role/${PROD_ECS_DAEMON_TASK_ROLE}@g" ./aws/task-definition.json
+            sed -i -e "s@log_prefix_here@${PROD_ECS_DAEMON_SERVICE_NAME}_${CIRCLE_BUILD_NUM}@g" ./aws/task-definition.json
+
+            sed -i -e "s@aws_log_group_here@${PROD_DAEMON_LOG_GROUP_NAME}@g" ./aws/task-definition.json
+            sed -i -e "s@env_var_here@dev@g" ./aws/task-definition.json
+
+            aws ecs register-task-definition --cli-input-json file://aws/task-definition.json
+
+            aws ecs update-service --cluster ${PROD_ECS_DAEMON_CLUSTER_NAME} --service ${PROD_ECS_DAEMON_SERVICE_NAME} --task-definition ${PROD_ECS_DAEMON_TASK_NAME}
+  
+
+jobs:
+  lint_and_unit_test:
+    executor: deploy_container
+    steps:
+      - checkout
+      - lint_and_unit_test_command
+
+  deploy_dagster_develop_server:
+    executor: deploy_container
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          profile-name: default
+          aws-region: AWS_DEFAULT_REGION
+          aws-access-key-id: DEV_AWS_ACCESS_KEY
+          aws-secret-access-key: DEV_AWS_SECRET_ACCESS_KEY
+      - setup_remote_docker
+      - deploy_to_dagster_dev
+      - slack/status:
+          fail_only: true
+          mentions: "here"
+          failure_message: 'Error For Deploying FE develop server :rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: "Sucess"
+          color: "#42f486"
+          message: 'Deployment DONE for FE develop server:sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+
+  deploy_dagster_daemon_develop_server:
+    executor: deploy_container
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          profile-name: default
+          aws-region: AWS_DEFAULT_REGION
+          aws-access-key-id: DEV_AWS_ACCESS_KEY
+          aws-secret-access-key: DEV_AWS_SECRET_ACCESS_KEY
+      - setup_remote_docker
+      - deploy_to_dagster_daemon_dev
+      - slack/status:
+          fail_only: true
+          mentions: "here"
+          failure_message: 'Error For Deploying BE develop server :rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: "Sucess"
+          color: "#42f486"
+          message: 'Deployment DONE for BE develop server:sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+
+  deploy_dagster_production_server:
+    executor: deploy_container
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          profile-name: default
+          aws-region: AWS_DEFAULT_REGION
+          aws-access-key-id: PROD_AWS_ACCESS_KEY
+          aws-secret-access-key: PROD_AWS_SECRET_ACCESS_KEY
+      - setup_remote_docker
+      - deploy_to_dagster_prod
+      - slack/status:
+          fail_only: true
+          mentions: "here"
+          failure_message: 'Error For FE Deploying prod server:rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: "Sucess"
+          color: "#42f486"
+          message: 'Deployment DONE for FE prod server :sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+
+  deploy_dagster_daemon_production_server:
+    executor: deploy_container
+    steps:
+      - checkout
+      - aws-cli/install
+      - aws-cli/setup:
+          profile-name: default
+          aws-region: AWS_DEFAULT_REGION
+          aws-access-key-id: PROD_AWS_ACCESS_KEY
+          aws-secret-access-key: PROD_AWS_SECRET_ACCESS_KEY
+      - setup_remote_docker
+      - deploy_to_dagster_daemon_prod
+      - slack/status:
+          fail_only: true
+          mentions: "here"
+          failure_message: 'Error For Deploying BE prod server:rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: "Sucess"
+          color: "#42f486"
+          message: 'Deployment DONE for BE prod server :sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+
+  notify-approval:
+    executor: deploy_container
+    steps:
+      - slack/approval:
+          message: "本番環境へのデプロイを承認してください"
+          mentions: "here"
+          color: "#F5E911"
+          webhook: ${SLACK_WEBHOOK}
+
+workflows:
+  ci-except-dev-master-branches:
+    jobs:
+      - lint_and_unit_test:
+          filters:
+            branches:
+              ignore:
+                - dev
+                - master
+  deploy-for-develpment-workflow:
+    jobs:
+      - lint_and_unit_test:
+          filters:
+            branches:
+              only:
+                - dev
+            tags:
+              only: /.*/
+      - deploy_dagster_develop_server:
+          filters:
+            branches:
+              only:
+                - dev
+            tags:
+              only: /.*/
+      - deploy_dagster_daemon_develop_server:
+          filters:
+            branches:
+              only:
+                - dev
+            tags:
+              only: /.*/
+  deploy-for-production-workflow:
+    jobs:
+      - lint_and_unit_test:
+          filters:
+            branches:
+              only:
+                - master
+            tags:
+              only: /.*/
+      - notify-approval:
+          filters:
+            branches:
+              only:
+                - master
+          requires:
+            - lint_and_unit_test
+      - approval:
+          filters:
+            branches:
+              only:
+                - master
+          requires:
+            - lint_and_unit_test
+          type: approval
+      - deploy_dagster_production_server:
+          requires:
+            - approval
+          filters:
+            branches:
+              only:
+                - master
+            tags:
+              only: /.*/
+      - deploy_dagster_daemon_production_server:
+          requires:
+            - approval
+          filters:
+            branches:
+              only:
+                - master
+            tags:
+              only: /.*/

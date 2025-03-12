@@ -1,0 +1,202 @@
+version: 2.1
+executors:
+  deploy_container:
+    docker:
+      - image: circleci/python:3.8.7
+    working_directory: ~/work
+
+orbs:
+  aws-cli: circleci/aws-cli@1.3.2
+  slack: circleci/slack@3.4.2
+
+commands:
+  api-ecs-deploy-dev:
+    steps:
+      - run:
+          name: api-ecs-deploy
+          command: |
+            cd aws_bleach_api_job
+            echo "ENV=\"dev\"" >> .env
+            set -x
+            aws --version
+            echo "any deploy command"
+            aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+            docker-compose build
+            docker tag ${API_ECS_DOCKER_IMAGE_NAME}:latest ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_API_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            docker push ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_API_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            ecr_arn=${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_API_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            sed -i -e "s@image_url_here@$ecr_arn@g" ./src/app/task-definition.json
+            sed -i -e "s@env_value_here@dev@g" ./src/app/task-definition.json
+            sed -i -e "s@default_region_here@${AWS_DEFAULT_REGION}@g" ./src/app/task-definition.json
+            sed -i -e "s@container_name_here@${DEV_API_CONTAINER_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@taskdf_name_here@${DEV_API_ECS_TASK_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@role_arn_here@arn:aws:iam::${AWS_ACCOUNT_NUMBER}:role/${DEV_API_ECS_TASK_ROLE}@g" ./src/app/task-definition.json
+            sed -i -e "s@log_path_here@ecs/${DEV_API_ECS_CLUSTER_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@log_prefix_here@${DEV_API_ECS_CLUSTER_NAME}@g" ./src/app/task-definition.json
+            aws ecs register-task-definition --cli-input-json file://src/app/task-definition.json
+  csv-dl-ecs-deploy-dev:
+    steps:
+      - run:
+          name: csv-dl-ecs-deploy
+          command: |
+            cd aws_bleach_csv_dl_job
+            echo "ENV=\"dev\"" >> .env
+            set -x
+            aws --version
+            echo "any deploy command"
+            aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+            docker-compose build
+            docker tag ${CSV_DL_ECS_DOCKER_IMAGE_NAME}:latest ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_CSV_DL_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            docker push ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_CSV_DL_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            ecr_arn=${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_CSV_DL_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            sed -i -e "s@image_url_here@$ecr_arn@g" ./src/app/task-definition.json
+            sed -i -e "s@env_value_here@dev@g" ./src/app/task-definition.json
+            sed -i -e "s@default_region_here@${AWS_DEFAULT_REGION}@g" ./src/app/task-definition.json
+            sed -i -e "s@container_name_here@${DEV_CSV_DL_CONTAINER_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@taskdf_name_here@${DEV_CSV_DL_ECS_TASK_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@role_arn_here@arn:aws:iam::${AWS_ACCOUNT_NUMBER}:role/${DEV_CSV_DL_ECS_TASK_ROLE}@g" ./src/app/task-definition.json
+            sed -i -e "s@log_path_here@ecs/${DEV_CSV_DL_ECS_CLUSTER_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@log_prefix_here@${DEV_CSV_DL_ECS_CLUSTER_NAME}@g" ./src/app/task-definition.json
+            aws ecs register-task-definition --cli-input-json file://src/app/task-definition.json
+  csv-tranfer-to-gcp-ecs-deploy-dev:
+    steps:
+      - run:
+          name: csv-transfer-to-gcp-ecs-deploy
+          command: |
+            cd aws_bleach_csv_tranfer_to_gcp_job
+            echo "ENV=\"dev\"" >> .env
+            set -x
+            aws --version
+            echo "any deploy command"
+            aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+            docker-compose build
+            docker tag ${CSV_TR_TO_GCP_ECS_DOCKER_IMAGE_NAME}:latest ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_CSV_TR_TO_GCP_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            docker push ${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_CSV_TR_TO_GCP_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            ecr_arn=${AWS_ACCOUNT_NUMBER}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${DEV_CSV_TR_TO_GCP_ECR_REPO_NAME}:${CIRCLE_BUILD_NUM}
+            sed -i -e "s@image_url_here@$ecr_arn@g" ./src/app/task-definition.json
+            sed -i -e "s@env_value_here@dev@g" ./src/app/task-definition.json
+            sed -i -e "s@default_region_here@${AWS_DEFAULT_REGION}@g" ./src/app/task-definition.json
+            sed -i -e "s@container_name_here@${DEV_CSV_TR_TO_GCP_CONTAINER_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@taskdf_name_here@${DEV_CSV_TR_TO_GCP_ECS_TASK_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@role_arn_here@arn:aws:iam::${AWS_ACCOUNT_NUMBER}:role/${DEV_CSV_TR_TO_GCP_ECS_TASK_ROLE}@g" ./src/app/task-definition.json
+            sed -i -e "s@log_path_here@ecs/${DEV_CSV_TR_TO_GCP_ECS_CLUSTER_NAME}@g" ./src/app/task-definition.json
+            sed -i -e "s@log_prefix_here@${DEV_CSV_TR_TO_GCP_ECS_CLUSTER_NAME}@g" ./src/app/task-definition.json
+            aws ecs register-task-definition --cli-input-json file://src/app/task-definition.json
+
+jobs:
+  flake8_lint:
+    executor: deploy_container
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            python -m pip install --upgrade pip
+            pip install flake8
+      - run:
+          name: Lint with flake8
+          command: |
+            flake8 --count --select=F --show-source --statistics
+  deploy-to-dev-api-ecs:
+    executor: deploy_container
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.14
+          docker_layer_caching: true
+      - aws-cli/install
+      - api-ecs-deploy-dev
+      - slack/status:
+          fail_only: true
+          mentions: 'here'
+          failure_message: 'Error For Deploying Dev ECS :rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: 'Sucess'
+          color: '#42f486'
+          message: 'Deployment DONE For Dev ECS :sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+  deploy-to-dev-csv-dl-ecs:
+    executor: deploy_container
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.14
+          docker_layer_caching: true
+      - aws-cli/install
+      - csv-dl-ecs-deploy-dev
+      - slack/status:
+          fail_only: true
+          mentions: 'here'
+          failure_message: 'Error For Deploying Dev ECS :rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: 'Sucess'
+          color: '#42f486'
+          message: 'Deployment DONE For Dev ECS :sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+  deploy-to-dev-csv-tr-ecs:
+    executor: deploy_container
+    steps:
+      - checkout
+      - setup_remote_docker:
+          version: 20.10.14
+          docker_layer_caching: true
+      - aws-cli/install
+      - csv-tranfer-to-gcp-ecs-deploy-dev
+      - slack/status:
+          fail_only: true
+          mentions: 'here'
+          failure_message: 'Error For Deploying Dev ECS :rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: 'Sucess'
+          color: '#42f486'
+          message: 'Deployment DONE For Dev ECS :sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+
+  notify-approval:
+    executor: deploy_container
+    steps:
+      - slack/approval:
+          message: "本番環境へのデプロイを承認してください"
+          mentions: "here"
+          color: "#F5E911"
+          webhook: ${SLACK_WEBHOOK}
+
+workflows:
+  server_flake8_test:
+    jobs:
+      - flake8_lint
+  api-ecs-dev-deploy-workflow:
+    jobs:
+      - notify-approval:
+          filters:
+            branches:
+              only:
+                - dev
+      - approval:
+          requires:
+            - notify-approval
+          type: approval
+          filters:
+            branches:
+              only: dev
+      - deploy-to-dev-api-ecs:
+          requires:
+            - approval
+          filters:
+            branches:
+              only: dev
+      - deploy-to-dev-csv-dl-ecs:
+          requires:
+            - approval
+          filters:
+            branches:
+              only: dev
+      - deploy-to-dev-csv-tr-ecs:
+          requires:
+            - approval
+          filters:
+            branches:
+              only: dev
