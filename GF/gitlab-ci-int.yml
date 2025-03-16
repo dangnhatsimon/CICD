@@ -1,0 +1,19 @@
+stages:
+  - deploy
+
+deploy_to_ec2:
+  stage: deploy
+  variables:
+    SSH_PRIVATE_KEY: "$SSH_PRIVATE_KEY" # Define your SSH private key as a GitLab CI/CD variable
+    EC2_SERVER: "$EC2_SERVER"
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - chown root:root /root/.ssh/id_rsa
+    - ssh-keyscan -H $EC2_SERVER >> ~/.ssh/known_hosts
+    # - git --version
+    # - git clone https://gitlab-ci-token:${CI_JOB_TOKEN}@172.16.128.172/data/airflow/dags # clone git to runner
+    - ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@${EC2_SERVER} 'mkdir -p dags_tmp && git --version && cd dags_tmp && git clone git@172.16.128.172:data/airflow/dags.git && cd .. && cp -r dags_tmp/dags/* dags && rm -rf dags_tmp' # sync dags to destination folder# sync dags to destination folder
+  only:
+    - main # Or specify the branch you want to trigger this deployment

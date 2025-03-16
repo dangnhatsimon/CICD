@@ -1,0 +1,240 @@
+version: 2.1
+executors:
+  deploy_container:
+    docker:
+      - image: cimg/python:3.11.1
+    working_directory: ~/work
+
+orbs:
+  gcp-cli: circleci/gcp-cli@3.1.1
+  gcp-gcr: circleci/gcp-gcr@0.15.3
+  slack: circleci/slack@3.4.2
+
+commands:
+  dev_deploy_export_to_sps:
+    steps:
+      - run:
+          name: deploy
+          command: |
+            cd gcp_bleach_export_to_sps_job
+            set -x
+            echo "any deploy command"
+            
+            touch .env
+            echo "ENV=\"dev\"" >> .env
+
+            docker-compose build
+            docker tag ${DOCKER_EXPORT_TO_SPS_IMAGE_NAME}:latest asia.gcr.io/${DEV_GCP_PROJECT_ID}/${DOCKER_EXPORT_TO_SPS_IMAGE_NAME}:${CIRCLE_SHA1}
+
+      - gcp-gcr/gcr-auth:
+          gcloud-service-key: DEV_GCP_KEYS
+          google-project-id: DEV_GCP_PROJECT_ID
+          google-compute-region: GCP_DEFAULT_REGION
+
+      - gcp-gcr/push-image:
+          google-project-id: DEV_GCP_PROJECT_ID
+          registry-url: 'asia.gcr.io'
+          image: $DOCKER_EXPORT_TO_SPS_IMAGE_NAME
+          tag: $CIRCLE_SHA1
+
+      - run:
+          name: deploy to cloud run
+          command: |
+            gcloud beta run jobs deploy \
+              --region=${GCP_DEFAULT_REGION} \
+              ${DEV_EXPORT_TO_SPS_JOB_NAME} \
+              --image asia.gcr.io/${DEV_GCP_PROJECT_ID}/${DOCKER_EXPORT_TO_SPS_IMAGE_NAME}:${CIRCLE_SHA1}
+
+  dev_deploy_gcs_csv_import_to_bq:
+    steps:
+      - run:
+          name: deploy
+          command: |
+            cd gcp_bleach_export_to_sps_job
+            set -x
+            echo "any deploy command"
+            
+            touch .env
+            echo "ENV=\"dev\"" >> .env
+
+            docker-compose build
+            docker tag ${DOCKER_IMPORT_CSV_TO_BQ_IMAGE_NAME}:latest asia.gcr.io/${DEV_GCP_PROJECT_ID}/${DOCKER_IMPORT_CSV_TO_BQ_IMAGE_NAME}:${CIRCLE_SHA1}
+
+      - gcp-gcr/gcr-auth:
+          gcloud-service-key: DEV_GCP_KEYS
+          google-project-id: DEV_GCP_PROJECT_ID
+          google-compute-region: GCP_DEFAULT_REGION
+
+      - gcp-gcr/push-image:
+          google-project-id: DEV_GCP_PROJECT_ID
+          registry-url: 'asia.gcr.io'
+          image: $DOCKER_IMPORT_CSV_TO_BQ_IMAGE_NAME
+          tag: $CIRCLE_SHA1
+
+      - run:
+          name: deploy to cloud run
+          command: |
+            gcloud beta run jobs deploy \
+              --region=${GCP_DEFAULT_REGION} \
+              ${DEV_IMPORT_CSV_TO_BQ_JOB_NAME} \
+              --image asia.gcr.io/${DEV_GCP_PROJECT_ID}/${DOCKER_IMPORT_CSV_TO_BQ_IMAGE_NAME}:${CIRCLE_SHA1}
+
+  dev_deploy_qa_upsert_key:
+    steps:
+      - run:
+          name: deploy
+          command: |
+            cd qa_upsert_key_consistency
+            set -x
+            echo "any deploy command"
+            
+            touch .env
+            echo "ENV=\"dev\"" >> .env
+
+            docker-compose build
+            docker tag ${DOCKER_QA_UPSERT_KEY_IMAGE_NAME}:latest asia.gcr.io/${DEV_GCP_PROJECT_ID}/${DOCKER_QA_UPSERT_KEY_IMAGE_NAME}:${CIRCLE_SHA1}
+
+      - gcp-gcr/gcr-auth:
+          gcloud-service-key: DEV_GCP_KEYS
+          google-project-id: DEV_GCP_PROJECT_ID
+          google-compute-region: GCP_DEFAULT_REGION
+
+      - gcp-gcr/push-image:
+          google-project-id: DEV_GCP_PROJECT_ID
+          registry-url: 'asia.gcr.io'
+          image: $DOCKER_QA_UPSERT_KEY_IMAGE_NAME
+          tag: $CIRCLE_SHA1
+
+      - run:
+          name: deploy to cloud run
+          command: |
+            gcloud beta run jobs deploy \
+              --region=${GCP_DEFAULT_REGION} \
+              ${DEV_QA_UPSERT_KEY_JOB_NAME} \
+              --image asia.gcr.io/${DEV_GCP_PROJECT_ID}/${DOCKER_QA_UPSERT_KEY_IMAGE_NAME}:${CIRCLE_SHA1}
+
+jobs:
+  dev_deploy_export_to_sps_job:
+    executor: deploy_container
+    steps:
+      - checkout
+      - gcp-cli/install
+      - setup_remote_docker
+      - dev_deploy_export_to_sps
+      - slack/status:
+          fail_only: true
+          mentions: 'here'
+          failure_message: 'Error For Deploying BE develop server :rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: 'Sucess'
+          color: '#42f486'
+          message: 'Deployment DONE for BE develop server:sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+
+  dev_deploy_gcs_csv_import_job:
+    executor: deploy_container
+    steps:
+      - checkout
+      - gcp-cli/install
+      - setup_remote_docker
+      - dev_deploy_gcs_csv_import_to_bq
+      - slack/status:
+          fail_only: true
+          mentions: 'here'
+          failure_message: 'Error For Deploying BE develop server :rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: 'Sucess'
+          color: '#42f486'
+          message: 'Deployment DONE for BE develop server:sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+
+  dev_deploy_qa_upsert_key_job:
+    executor: deploy_container
+    steps:
+      - checkout
+      - gcp-cli/install
+      - setup_remote_docker
+      - dev_deploy_qa_upsert_key
+      - slack/status:
+          fail_only: true
+          mentions: 'here'
+          failure_message: 'Error For Deploying BE develop server :rotating_light: \n :innocent: ${CIRCLE_USERNAME}     :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+      - slack/notify:
+          title: 'Sucess'
+          color: '#42f486'
+          message: 'Deployment DONE for BE develop server:sparkles: \n :grin: ${CIRCLE_USERNAME}   :branch: ${CIRCLE_BRANCH}'
+          webhook: ${SLACK_WEBHOOK}
+
+  flake8_lint:
+    executor: deploy_container
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            python -m pip install --upgrade pip
+            pip install flake8
+      - run:
+          name: Lint with flake8
+          command: |
+            flake8 --count --select=F --show-source --statistics
+
+  notify-approval:
+    executor: deploy_container
+    steps:
+      - slack/approval:
+          message: '本番環境へのデプロイを承認してください'
+          mentions: 'here'
+          color: '#F5E911'
+          webhook: ${SLACK_WEBHOOK}
+
+workflows:
+  version: 3
+  flake8_test:
+    jobs:
+      - flake8_lint
+  deploy-for-dev-workflow:
+    jobs:
+      - notify-approval:
+          filters:
+            branches:
+              only:
+                - dev
+      - approval:
+          filters:
+            branches:
+              only:
+                - dev
+          requires:
+            - notify-approval
+          type: approval
+      - dev_deploy_export_to_sps_job:
+          requires:
+            - approval
+          filters:
+            branches:
+              only:
+                - dev
+            tags:
+              only: /.*/
+      - dev_deploy_gcs_csv_import_job:
+          requires:
+            - approval
+          filters:
+            branches:
+              only:
+                - dev
+            tags:
+              only: /.*/
+      - dev_deploy_qa_upsert_key_job:
+          requires:
+            - approval
+          filters:
+            branches:
+              only:
+                - dev
+            tags:
+              only: /.*/
